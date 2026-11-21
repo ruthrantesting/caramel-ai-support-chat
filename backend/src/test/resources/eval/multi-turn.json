@@ -1,0 +1,162 @@
+[
+  {
+    "id": "mt-01",
+    "turns": [
+      "I'm getting HTTP 429 from the chat completions endpoint.",
+      "How do I fix it?"
+    ],
+    "expects_keyword": "429"
+  },
+  {
+    "id": "mt-02",
+    "turns": [
+      "My requests are slow, around 8 seconds per call.",
+      "Would a smaller model help with that?"
+    ],
+    "expects_keyword": "model"
+  },
+  {
+    "id": "mt-03",
+    "turns": [
+      "I see 'context length exceeded' errors.",
+      "What is the usual way to shorten my prompts?"
+    ],
+    "expects_keyword": "prompt"
+  },
+  {
+    "id": "mt-04",
+    "turns": [
+      "Streaming stops halfway through my reply.",
+      "Could my client timeout be the cause?"
+    ],
+    "expects_keyword": "timeout"
+  },
+  {
+    "id": "mt-05",
+    "turns": [
+      "Which model should I pick for summarising long documents?",
+      "And what if I need it cheaper?"
+    ],
+    "expects_keyword": "model"
+  },
+  {
+    "id": "mt-06",
+    "turns": [
+      "I keep getting 401 errors after rotating my key.",
+      "Where do I check which key is active?"
+    ],
+    "expects_keyword": "key"
+  },
+  {
+    "id": "mt-07",
+    "turns": [
+      "My integration retries too often and gets throttled.",
+      "What backoff pattern do you suggest?"
+    ],
+    "expects_keyword": "backoff"
+  },
+  {
+    "id": "mt-08",
+    "turns": [
+      "Requests fail only from one region.",
+      "How can I tell if it's a network issue?"
+    ],
+    "expects_keyword": "network"
+  },
+  {
+    "id": "mt-09",
+    "turns": [
+      "I want to compare two models for code generation.",
+      "Which one has the lower latency you'd expect?"
+    ],
+    "expects_keyword": "latency"
+  },
+  {
+    "id": "mt-10",
+    "turns": [
+      "The JSON response is missing the 'usage' field.",
+      "Does that field appear when streaming?"
+    ],
+    "expects_keyword": "stream"
+  },
+  {
+    "id": "mt-11",
+    "turns": [
+      "I'm getting HTTP 429 from the chat completions endpoint.",
+      "How do I fix it?"
+    ],
+    "expects_keyword": "429"
+  },
+  {
+    "id": "mt-12",
+    "turns": [
+      "My requests are slow, around 8 seconds per call.",
+      "Would a smaller model help with that?"
+    ],
+    "expects_keyword": "model"
+  },
+  {
+    "id": "mt-13",
+    "turns": [
+      "I see 'context length exceeded' errors.",
+      "What is the usual way to shorten my prompts?"
+    ],
+    "expects_keyword": "prompt"
+  },
+  {
+    "id": "mt-14",
+    "turns": [
+      "Streaming stops halfway through my reply.",
+      "Could my client timeout be the cause?"
+    ],
+    "expects_keyword": "timeout"
+  },
+  {
+    "id": "mt-15",
+    "turns": [
+      "Which model should I pick for summarising long documents?",
+      "And what if I need it cheaper?"
+    ],
+    "expects_keyword": "model"
+  },
+  {
+    "id": "mt-16",
+    "turns": [
+      "I keep getting 401 errors after rotating my key.",
+      "Where do I check which key is active?"
+    ],
+    "expects_keyword": "key"
+  },
+  {
+    "id": "mt-17",
+    "turns": [
+      "My integration retries too often and gets throttled.",
+      "What backoff pattern do you suggest?"
+    ],
+    "expects_keyword": "backoff"
+  },
+  {
+    "id": "mt-18",
+    "turns": [
+      "Requests fail only from one region.",
+      "How can I tell if it's a network issue?"
+    ],
+    "expects_keyword": "network"
+  },
+  {
+    "id": "mt-19",
+    "turns": [
+      "I want to compare two models for code generation.",
+      "Which one has the lower latency you'd expect?"
+    ],
+    "expects_keyword": "latency"
+  },
+  {
+    "id": "mt-20",
+    "turns": [
+      "The JSON response is missing the 'usage' field.",
+      "Does that field appear when streaming?"
+    ],
+    "expects_keyword": "stream"
+  }
+]
