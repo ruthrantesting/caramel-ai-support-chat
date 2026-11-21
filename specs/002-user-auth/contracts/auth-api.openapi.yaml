@@ -1,0 +1,307 @@
+openapi: 3.0.3
+info:
+  title: Caramel AI Tech Support Chat, Authentication API
+  version: 1.0.0
+  description: |
+    Draft contract matching 002-prd-user-auth.md section 9 and Constitution VI.
+    Changes to the existing chat endpoints are in chat-api-auth-changes.md.
+
+    Session and CSRF model:
+    - A successful register or login sets the session cookie (`HttpOnly`, `Secure`, `SameSite=Lax`).
+      The cookie is never readable by page scripts and never appears in a response body.
+    - The server sets a readable `XSRF-TOKEN` cookie on every response. Every POST and DELETE
+      MUST send its value in the `X-XSRF-TOKEN` header, or the server answers 403 CSRF_INVALID.
+      The token changes at sign-in, so clients read the cookie before each request.
+    - The first call a client makes is GET /api/auth/me. It returns 401 for a visitor and still
+      sets the XSRF-TOKEN cookie.
+servers:
+  - url: http://localhost:8082
+security:
+  - sessionCookie: []
+paths:
+  /api/auth/register:
+    post:
+      summary: Create an account and sign in
+      operationId: register
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+      responses:
+        '201':
+          description: Account created. The response sets the session cookie.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '400':
+          description: >-
+            Validation failed. `fieldErrors` names each field (`email`, `password`). The message for
+            the common-password case asks the user to choose a different password.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthApiError'
+        '403':
+          $ref: '#/components/responses/CsrfInvalid'
+        '409':
+          description: >-
+            An account with this email may already exist. The message is neutral: it does not say
+            that the address is registered, and points to sign-in and password reset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/auth/login:
+    post:
+      summary: Sign in
+      operationId: login
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Signed in. The response sets the session cookie and a new XSRF-TOKEN cookie.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '400':
+          description: Malformed body (missing field).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthApiError'
+        '401':
+          description: >-
+            Email or password is incorrect. The code, message, status, and approximate response
+            time are the same for an unregistered email and a wrong password.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthApiError'
+        '403':
+          $ref: '#/components/responses/CsrfInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/auth/logout:
+    post:
+      summary: Sign out and end the session on the server
+      operationId: logout
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '204':
+          description: Session ended. The session cookie is cleared.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfInvalid'
+  /api/auth/me:
+    get:
+      summary: The current user. Used to restore state after a page reload.
+      operationId: me
+      responses:
+        '200':
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+  /api/auth/password-reset:
+    post:
+      summary: Request a password reset email (User Story 6)
+      operationId: requestPasswordReset
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '202':
+          description: >-
+            Always returned for a well-formed request, whether or not the address is registered.
+            Response time does not depend on whether an email is sent.
+        '400':
+          description: Malformed body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthApiError'
+        '403':
+          $ref: '#/components/responses/CsrfInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/auth/password-reset/confirm:
+    post:
+      summary: Set a new password with a reset token (User Story 6)
+      operationId: confirmPasswordReset
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token:
+                  type: string
+                  description: From the emailed link. Single use, valid for 60 minutes.
+                newPassword:
+                  type: string
+                  minLength: 12
+                  maxLength: 128
+      responses:
+        '204':
+          description: Password changed. All sessions of the account are ended. The user signs in again.
+        '400':
+          description: >-
+            Password does not meet the rules (with `fieldErrors`), or the token is invalid, used,
+            or expired (code `RESET_TOKEN_INVALID`, one message for all three).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthApiError'
+        '403':
+          $ref: '#/components/responses/CsrfInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: JSESSIONID
+      description: HttpOnly session cookie. Set by register and login. Never read by scripts.
+  parameters:
+    CsrfHeader:
+      name: X-XSRF-TOKEN
+      in: header
+      required: true
+      description: Value of the XSRF-TOKEN cookie. Missing or wrong value returns 403.
+      schema:
+        type: string
+  responses:
+    Unauthenticated:
+      description: Not signed in, or the session has expired.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AuthApiError'
+    CsrfInvalid:
+      description: The CSRF header is missing or does not match. Clients refresh it with GET /api/auth/me and retry once.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AuthApiError'
+    RateLimited:
+      description: Too many requests from this address, or too many failed sign-ins for this account.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AuthApiError'
+  schemas:
+    Credentials:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: Trimmed and compared in lower case.
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
+          description: >-
+            12 to 128 characters, counted after Unicode normalization. No composition rules.
+            Must not be on the common-password list. Never returned or logged.
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+          description: Not length-checked here, so a wrong or short value gets the generic 401, not a 400.
+    Me:
+      type: object
+      required: [id, email]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+    AuthErrorCode:
+      type: string
+      enum:
+        - UNAUTHENTICATED
+        - CSRF_INVALID
+        - INVALID_CREDENTIALS
+        - VALIDATION_FAILED
+        - EMAIL_UNAVAILABLE
+        - RATE_LIMITED
+        - RESET_TOKEN_INVALID
+        - INTERNAL_ERROR
+    FieldError:
+      type: object
+      required: [field, message]
+      properties:
+        field:
+          type: string
+          enum: [email, password, newPassword]
+        message:
+          type: string
+    AuthApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          $ref: '#/components/schemas/AuthErrorCode'
+        message:
+          type: string
+          description: Fixed, user-safe text. Never contains a password, token, or session value.
+        retryAfterSeconds:
+          type: integer
+          description: Present for RATE_LIMITED.
+        fieldErrors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldError'
+          description: Present for VALIDATION_FAILED.
