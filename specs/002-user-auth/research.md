@@ -25,7 +25,8 @@ IDs use an `A-` prefix so they do not collide with the `R-` entries in `specs/00
 - **Evidence**:
   - `spring-security-bom` 7.1.1 and `h2` 2.4.240 are in the local Maven cache (**Verified**).
   - No Spring Security jar, no PostgreSQL driver, and no `bcprov` jar are cached (**Verified**). The first build needs network access. Maven Central answered HTTP 200 from this environment (**Verified**).
-  - The exact Boot 4 artifact and package names (for example, the location of `UserDetailsServiceAutoConfiguration`) are **Unverified** until the dependencies resolve. The first implementation step resolves them before any code depends on them.
+  - Resolved during T003 (**Verified**): `mvn -DskipTests package` succeeds with the new dependencies. Spring Security resolves to **7.1.1** (`spring-security-crypto-7.1.1.jar` in the local cache). `bcprov-jdk18on` is not managed by Spring Boot, so it is pinned in `backend/pom.xml` as `bouncycastle.version` 1.87, the newest release on Maven Central.
+  - Still **Unverified**: the Boot 4 package names that code depends on (for example, the location of `UserDetailsServiceAutoConfiguration`). Each is checked when the code that uses it is written.
 
 ## A-3. Password hashing
 
@@ -34,7 +35,7 @@ IDs use an `A-` prefix so they do not collide with the `R-` entries in `specs/00
 - **Alternatives**:
   - bcrypt with a SHA-256 pre-hash to avoid the 72-byte limit. Rejected: extra custom code that a reviewer must verify, to avoid one extra dependency.
   - bcrypt without a pre-hash and a 72-byte maximum. Rejected: contradicts the 128-character maximum in the spec.
-- **Evidence**: The 72-byte bcrypt limit is a property of the algorithm, stated from general knowledge and not checked against this repository (**Unverified**; gate: the 128-character round-trip in quickstart step 2). Argon2 timing on the target machine is **Unverified**: measure in quickstart step 9. If one hash exceeds about 250 ms, lower the memory parameter.
+- **Evidence**: `Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8()` exists in spring-security-crypto 7.1.1 (**Verified** by `javap`, T003). The 72-byte bcrypt limit is a property of the algorithm, stated from general knowledge and not checked against this repository (**Unverified**; gate: the 128-character round-trip in quickstart step 2). Argon2 timing on the target machine is **Unverified**: measure in quickstart step 9. If one hash exceeds about 250 ms, lower the memory parameter.
 
 ## A-4. Password policy and the common-password list
 
@@ -118,7 +119,7 @@ IDs use an `A-` prefix so they do not collide with the `R-` entries in `specs/00
 
 ## A-12. Brute-force protection per account
 
-- **Decision**: A `LoginThrottle` in process memory tracks failed sign-ins per normalized email address, whether or not the address is registered. After 5 failures in 15 minutes, further attempts are refused with `429` and a `Retry-After`. The wait starts at 30 seconds and doubles with each further failure, capped at 15 minutes. A success clears the count.
+- **Decision**: A `LoginThrottle` in process memory tracks failed sign-ins per normalized email address, whether or not the address is registered. After 5 failures in 15 minutes, further attempts are refused with `429` and a `Retry-After`. The wait starts at 30 seconds and doubles with each further failure, capped at 15 minutes. A success clears the count. Failures are counted consecutively: the count restarts after a quiet period longer than 15 minutes, which is the data model's purge rule. Counting only failures inside the last 15 minutes would stop the escalation after about 10 minutes, because the older failures leave the window (implemented in `auth/LoginThrottle.java`, tested by `LoginThrottleTest`).
 - **Rationale**: Tracking unregistered addresses the same way as registered ones keeps the response identical, so the throttle does not leak registration (FR-008). A capped, increasing delay, not a permanent lockout, limits what an attacker gains by deliberately locking a victim out.
 - **Known weakness**: An attacker can still keep a chosen account in a delay of up to 15 minutes by sending bad attempts. This is accepted for the MVP. The spec Assumptions record only that the delay is capped to avoid a permanent lockout. They do not yet state this residual weakness, so confirm it with the user and add it. Mitigations for later: per-address plus per-account tracking, MFA, or CAPTCHA.
 - **Evidence**: Thresholds come from the spec Assumptions. State is lost on restart (accepted).
@@ -139,7 +140,7 @@ IDs use an `A-` prefix so they do not collide with the `R-` entries in `specs/00
 
 - **Decision**: The controller reads the user ID from the request thread before the stream starts. The reactive pipeline never touches the security context. A test confirms that a long streamed reply completes while the session stays valid, and that signing out in another request does not corrupt a reply already in progress.
 - **Rationale**: Security 6 and later also authorizes asynchronous dispatches. The streaming reply is dispatched asynchronously, so the session must still be readable when the stream completes. Capturing the ID early removes any dependence on thread-bound context.
-- **Evidence**: **Unverified**. `StreamingFlushTest` already exercises streaming. Gate: extend it with an authenticated user, and check that the first event is flushed before the stream ends.
+- **Evidence**: **Verified** by `StreamingFlushTest`: the first event is flushed before the stream ends, and a sign-out during a reply does not cut it (`signingOutMidReplyDoesNotCutTheReplyThatIsAlreadyStreaming`). The first run failed: after the session ended, Security authorized the async dispatch that completes the stream, denied it, and the reply was cut with no `done` event. The fix is `dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()` in `SecurityConfig`, so only the original request is authorized. `shouldFilterAllDispatcherTypes` does not exist in Spring Security 7.1.1.
 
 ## A-15. Default generated user
 

@@ -5,14 +5,16 @@ import { MAX_MESSAGE_CHARS } from '../hooks/useChat';
 interface Props {
   disabled: boolean;
   onSend: (text: string) => void;
+  /** Text to start with, used to restore an unsent question after a different user signs in. */
+  initialText?: string;
 }
 
 /**
  * The message input. It is disabled while a reply streams (spec edge case) and blocks empty and
  * over-long messages with a reason (spec FR-020).
  */
-export function Composer({ disabled, onSend }: Props) {
-  const [text, setText] = useState('');
+export function Composer({ disabled, onSend, initialText }: Props) {
+  const [text, setText] = useState(initialText ?? '');
   const [notice, setNotice] = useState<string | null>(null);
 
   function submit(event: FormEvent<HTMLFormElement>) {

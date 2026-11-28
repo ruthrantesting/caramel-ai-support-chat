@@ -95,7 +95,7 @@ Extends the 001 conversation entry (`specs/001-tech-support-chat/data-model.md`)
 
 | Field | Rules |
 |-------|-------|
-| `failures` | Count of failed sign-ins in the last 15 minutes. |
+| `failures` | Count of consecutive failed sign-ins. Restarts after a quiet period longer than 15 minutes (research A-12). |
 | `blockedUntil` | Set when `failures` reaches 5, to now plus a delay of 30 seconds doubling with each further failure, capped at 15 minutes. |
 
 A successful sign-in clears the entry. Attempts while `blockedUntil` is in the future are refused with `429` and `Retry-After`, without checking the password. Entries with no failure in 15 minutes are purged.

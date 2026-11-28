@@ -34,6 +34,8 @@ class ConversationIsolationTest {
     @Autowired
     private ChatService chatService;
 
+    private static final String USER = "user-a";
+
     @Autowired
     private ChatMemory chatMemory;
 
@@ -54,8 +56,8 @@ class ConversationIsolationTest {
         String first = UUID.randomUUID().toString();
         String second = UUID.randomUUID().toString();
 
-        chatService.stream(first, "alpha-question").blockLast();
-        chatService.stream(second, "beta-question").blockLast();
+        chatService.stream(USER, first, "alpha-question").blockLast();
+        chatService.stream(USER, second, "beta-question").blockLast();
 
         ArgumentCaptor<Prompt> prompts = ArgumentCaptor.forClass(Prompt.class);
         verify(chatModel, times(2)).stream(prompts.capture());
@@ -66,10 +68,10 @@ class ConversationIsolationTest {
         assertThat(sentToModelForSecond).noneMatch(text -> text.contains("alpha-question"));
         assertThat(sentToModelForSecond).noneMatch(text -> text.contains("reply-from-a"));
 
-        assertThat(chatMemory.get(second)).extracting(Message::getText)
+        assertThat(chatMemory.get(ChatService.memoryKey(USER, second))).extracting(Message::getText)
                 .noneMatch(text -> text.contains("alpha-question") || text.contains("reply-from-a"));
         // The second conversation's own reply is recorded, so its memory is not empty.
-        assertThat(chatMemory.get(second)).extracting(Message::getText).contains("reply-from-b");
+        assertThat(chatMemory.get(ChatService.memoryKey(USER, second))).extracting(Message::getText).contains("reply-from-b");
     }
 
     private static ChatResponse chunk(String text) {

@@ -1,5 +1,7 @@
 package ai.caramel.support.web;
 
+import static ai.caramel.support.AuthTestSupport.USER_A;
+import static ai.caramel.support.AuthTestSupport.signedInAs;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -11,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.util.List;
 import java.util.UUID;
+import ai.caramel.support.chat.ChatService;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -49,28 +52,28 @@ class ClearConversationTest {
     void clearingAnExistingConversationEmptiesItsMemoryAndReturns204() throws Exception {
         String conversation = UUID.randomUUID().toString();
         stubReply("earlier answer");
-        MvcResult started = mvc.perform(post("/api/chat")
+        MvcResult started = mvc.perform(post("/api/chat").with(signedInAs(USER_A))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(turn(conversation, "an earlier question")))
                 .andExpect(request().asyncStarted())
                 .andReturn();
         // Finish the stream so the turn is written to memory before the assertion.
         mvc.perform(asyncDispatch(started)).andExpect(status().isOk());
-        assertThat(chatMemory.get(conversation)).isNotEmpty();
+        assertThat(chatMemory.get(ChatService.memoryKey(USER_A.toString(), conversation))).isNotEmpty();
 
-        mvc.perform(delete("/api/chat/" + conversation)).andExpect(status().isNoContent());
+        mvc.perform(delete("/api/chat/" + conversation).with(signedInAs(USER_A))).andExpect(status().isNoContent());
 
-        assertThat(chatMemory.get(conversation)).isEmpty();
+        assertThat(chatMemory.get(ChatService.memoryKey(USER_A.toString(), conversation))).isEmpty();
     }
 
     @Test
-    void clearingAnUnknownConversationReturns204() throws Exception {
-        mvc.perform(delete("/api/chat/" + UUID.randomUUID())).andExpect(status().isNoContent());
+    void clearingAnUnknownConversationReturns404() throws Exception {
+        mvc.perform(delete("/api/chat/" + UUID.randomUUID()).with(signedInAs(USER_A))).andExpect(status().isNotFound());
     }
 
     @Test
     void malformedConversationIdReturns400() throws Exception {
-        mvc.perform(delete("/api/chat/not-a-uuid")).andExpect(status().isBadRequest());
+        mvc.perform(delete("/api/chat/not-a-uuid").with(signedInAs(USER_A))).andExpect(status().isBadRequest());
     }
 
     private void stubReply(String text) {

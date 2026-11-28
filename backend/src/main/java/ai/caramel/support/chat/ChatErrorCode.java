@@ -27,7 +27,16 @@ public enum ChatErrorCode {
             true),
     INTERNAL_ERROR(
             "Something went wrong. Please try again.",
-            true);
+            true),
+    UNAUTHENTICATED(
+            "Your session has expired. Please sign in again.",
+            false),
+    CSRF_INVALID(
+            "Something went wrong with your request. Please try again.",
+            true),
+    CONVERSATION_NOT_FOUND(
+            "This conversation is no longer available. Please start a new chat.",
+            false);
 
     private final String userMessage;
     private final boolean retryable;

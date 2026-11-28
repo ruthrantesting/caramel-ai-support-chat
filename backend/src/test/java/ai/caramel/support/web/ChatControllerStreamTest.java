@@ -1,5 +1,7 @@
 package ai.caramel.support.web;
 
+import static ai.caramel.support.AuthTestSupport.USER_A;
+import static ai.caramel.support.AuthTestSupport.signedInAs;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -15,6 +17,7 @@ import ai.caramel.support.chat.ChatErrorCode;
 import ai.caramel.support.chat.ChatEvent;
 import ai.caramel.support.chat.ChatFailure;
 import ai.caramel.support.chat.ChatService;
+import ai.caramel.support.config.SecurityConfig;
 import ai.caramel.support.config.SupportProperties;
 import java.time.Clock;
 import org.junit.jupiter.api.Test;
@@ -22,6 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -32,6 +36,7 @@ import reactor.core.publisher.Flux;
  * SSE framing and request validation for {@code POST /api/chat}, with the service stubbed.
  */
 @WebMvcTest(ChatController.class)
+@Import(SecurityConfig.class)
 class ChatControllerStreamTest {
 
     private static final String CONVERSATION = "11111111-1111-4111-8111-111111111111";
@@ -55,6 +60,11 @@ class ChatControllerStreamTest {
         }
 
         @Bean
+        ai.caramel.support.config.AuthProperties authProperties() {
+            return TestSettings.authDefaults();
+        }
+
+        @Bean
         Clock clock() {
             return Clock.systemUTC();
         }
@@ -62,7 +72,7 @@ class ChatControllerStreamTest {
 
     @Test
     void streamsTokensThenDoneAsServerSentEvents() throws Exception {
-        when(chatService.stream(eq(CONVERSATION), eq("hi"))).thenReturn(Flux.just(
+        when(chatService.stream(any(), eq(CONVERSATION), eq("hi"))).thenReturn(Flux.just(
                 new ChatEvent.Token("Hel"), new ChatEvent.Token("lo"), new ChatEvent.Done()));
 
         String body = streamBody(validRequest("hi"));
@@ -74,7 +84,7 @@ class ChatControllerStreamTest {
 
     @Test
     void newlinesInTokensAreEncodedInsideTheJsonString() throws Exception {
-        when(chatService.stream(any(), any())).thenReturn(Flux.just(
+        when(chatService.stream(any(), any(), any())).thenReturn(Flux.just(
                 new ChatEvent.Token("line one\nline two"), new ChatEvent.Done()));
 
         String body = streamBody(validRequest("hi"));
@@ -85,7 +95,7 @@ class ChatControllerStreamTest {
 
     @Test
     void failureIsSentAsErrorEventWithFixedMessage() throws Exception {
-        when(chatService.stream(any(), any())).thenReturn(Flux.just(
+        when(chatService.stream(any(), any(), any())).thenReturn(Flux.just(
                 new ChatEvent.Failed(ChatFailure.of(ChatErrorCode.TIMEOUT))));
 
         String body = streamBody(validRequest("hi"));
@@ -96,10 +106,10 @@ class ChatControllerStreamTest {
 
     @Test
     void providerFailureBeforeFirstTokenIsHttp503WithApiError() throws Exception {
-        when(chatService.stream(any(), any())).thenReturn(Flux.just(
+        when(chatService.stream(any(), any(), any())).thenReturn(Flux.just(
                 new ChatEvent.Failed(ChatFailure.of(ChatErrorCode.PROVIDER_UNAVAILABLE))));
 
-        MvcResult result = mvc.perform(post("/api/chat")
+        MvcResult result = mvc.perform(post("/api/chat").with(signedInAs(USER_A))
                         .contentType(MediaType.APPLICATION_JSON)
                         .accept(MediaType.TEXT_EVENT_STREAM)
                         .content(validRequest("hi")))
@@ -115,7 +125,7 @@ class ChatControllerStreamTest {
 
     @Test
     void rejectsMalformedConversationIdWith400() throws Exception {
-        mvc.perform(post("/api/chat")
+        mvc.perform(post("/api/chat").with(signedInAs(USER_A))
                         .contentType(MediaType.APPLICATION_JSON)
                         .accept(MediaType.TEXT_EVENT_STREAM) // as the real client sends it
                         .content("{\"conversationId\":\"not-a-uuid\",\"message\":\"hi\"}"))
@@ -125,7 +135,7 @@ class ChatControllerStreamTest {
 
     @Test
     void rejectsBlankMessageWith400() throws Exception {
-        mvc.perform(post("/api/chat")
+        mvc.perform(post("/api/chat").with(signedInAs(USER_A))
                         .contentType(MediaType.APPLICATION_JSON)
                         .accept(MediaType.TEXT_EVENT_STREAM) // as the real client sends it
                         .content(validRequest("   ")))
@@ -135,7 +145,7 @@ class ChatControllerStreamTest {
     @Test
     void rejectsMessageLongerThan4000CharactersWith400() throws Exception {
         String tooLong = "a".repeat(4001);
-        mvc.perform(post("/api/chat")
+        mvc.perform(post("/api/chat").with(signedInAs(USER_A))
                         .contentType(MediaType.APPLICATION_JSON)
                         .accept(MediaType.TEXT_EVENT_STREAM) // as the real client sends it
                         .content(validRequest(tooLong)))
@@ -143,7 +153,7 @@ class ChatControllerStreamTest {
     }
 
     private String streamBody(String json) throws Exception {
-        MvcResult started = mvc.perform(post("/api/chat")
+        MvcResult started = mvc.perform(post("/api/chat").with(signedInAs(USER_A))
                         .contentType(MediaType.APPLICATION_JSON)
                         .accept(MediaType.TEXT_EVENT_STREAM)
                         .content(json))

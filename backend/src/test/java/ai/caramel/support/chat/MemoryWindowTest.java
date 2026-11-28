@@ -29,6 +29,8 @@ import reactor.core.publisher.Flux;
 @SpringBootTest(properties = "spring.ai.google.genai.api-key=test-key-not-real")
 class MemoryWindowTest {
 
+    private static final String USER = "user-a";
+
     @Autowired
     private ChatService chatService;
 
@@ -48,7 +50,7 @@ class MemoryWindowTest {
     void firstTurnStaysInTheWindowAfterTwelveTurns() {
         String conversation = UUID.randomUUID().toString();
         for (int turn = 1; turn <= 12; turn++) {
-            chatService.stream(conversation, "question " + turn).blockLast();
+            chatService.stream(USER, conversation, "question " + turn).blockLast();
         }
 
         List<String> texts = texts(conversation);
@@ -60,7 +62,7 @@ class MemoryWindowTest {
     void oldestWholeTurnsAreEvictedWhenTheWindowIsFull() {
         String conversation = UUID.randomUUID().toString();
         for (int turn = 1; turn <= 25; turn++) {
-            chatService.stream(conversation, "question " + turn).blockLast();
+            chatService.stream(USER, conversation, "question " + turn).blockLast();
         }
 
         List<String> texts = texts(conversation);
@@ -70,7 +72,7 @@ class MemoryWindowTest {
     }
 
     private List<String> texts(String conversation) {
-        return chatMemory.get(conversation).stream().map(Message::getText).toList();
+        return chatMemory.get(ChatService.memoryKey(USER, conversation)).stream().map(Message::getText).toList();
     }
 
     private static ChatResponse chunk(String text) {

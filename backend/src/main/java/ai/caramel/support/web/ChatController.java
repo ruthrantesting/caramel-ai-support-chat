@@ -1,5 +1,6 @@
 package ai.caramel.support.web;
 
+import ai.caramel.support.auth.AuthenticatedUser;
 import ai.caramel.support.chat.ChatErrorCode;
 import ai.caramel.support.chat.ChatEvent;
 import ai.caramel.support.chat.ChatFailureException;
@@ -11,6 +12,7 @@ import java.util.Set;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -47,8 +49,10 @@ public class ChatController {
      * after the first event, is an in-stream {@code error} event (research R-12).
      */
     @PostMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<String>> chat(@Valid @RequestBody ChatRequest request) {
-        return chatService.stream(request.conversationId(), request.message())
+    public Flux<ServerSentEvent<String>> chat(
+            @Valid @RequestBody ChatRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return chatService.stream(user.id().toString(), request.conversationId(), request.message())
                 .<ServerSentEvent<String>>switchOnFirst((first, events) -> {
                     if (first.hasValue() && first.get() instanceof ChatEvent.Failed failed
                             && PRE_STREAM_FAILURES.contains(failed.failure().code())) {
@@ -59,13 +63,14 @@ public class ChatController {
     }
 
     /**
-     * New chat: cancels any in-flight reply, clears the conversation's memory, and returns 204.
-     * An unknown id is also 204, because clearing it is a no-op (contracts/chat-api.openapi.yaml).
+     * New chat: cancels any in-flight reply, clears the conversation's memory, and returns 204. An
+     * unknown or another user's identifier returns 404 (contracts/chat-api-auth-changes.md).
      */
     @DeleteMapping("/{conversationId}")
     public ResponseEntity<Void> clear(
-            @PathVariable @Pattern(regexp = ChatRequest.CONVERSATION_ID_REGEX) String conversationId) {
-        chatService.clear(conversationId);
+            @PathVariable @Pattern(regexp = ChatRequest.CONVERSATION_ID_REGEX) String conversationId,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        chatService.clear(user.id().toString(), conversationId);
         return ResponseEntity.noContent().build();
     }
 

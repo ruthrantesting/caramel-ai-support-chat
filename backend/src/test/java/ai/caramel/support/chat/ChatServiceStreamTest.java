@@ -31,6 +31,7 @@ import reactor.test.StepVerifier;
 class ChatServiceStreamTest {
 
     private static final String CONVERSATION = "11111111-1111-4111-8111-111111111111";
+    private static final String USER = "user-a";
 
     private ChatModel chatModel;
     private ChatService service;
@@ -53,7 +54,7 @@ class ChatServiceStreamTest {
         when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(
                 chunk("Hel"), chunk("lo"), chunk("!")));
 
-        StepVerifier.create(service.stream(CONVERSATION, "hi"))
+        StepVerifier.create(service.stream(USER, CONVERSATION, "hi"))
                 .expectNext(new ChatEvent.Token("Hel"))
                 .expectNext(new ChatEvent.Token("lo"))
                 .expectNext(new ChatEvent.Token("!"))
@@ -66,7 +67,7 @@ class ChatServiceStreamTest {
         Sinks.Many<ChatResponse> model = Sinks.many().unicast().onBackpressureBuffer();
         when(chatModel.stream(any(Prompt.class))).thenReturn(model.asFlux());
 
-        StepVerifier.create(service.stream(CONVERSATION, "hi"))
+        StepVerifier.create(service.stream(USER, CONVERSATION, "hi"))
                 .then(() -> model.tryEmitNext(chunk("first")))
                 .expectNext(new ChatEvent.Token("first"))
                 .then(() -> model.tryEmitNext(chunk("second")))
@@ -81,7 +82,7 @@ class ChatServiceStreamTest {
         when(chatModel.stream(any(Prompt.class))).thenReturn(
                 Flux.error(new IOException("connection to internal-host:443 refused")));
 
-        StepVerifier.create(service.stream(CONVERSATION, "hi"))
+        StepVerifier.create(service.stream(USER, CONVERSATION, "hi"))
                 .assertNext(event -> {
                     ChatEvent.Failed failed = (ChatEvent.Failed) event;
                     assertCode(failed, ChatErrorCode.PROVIDER_UNAVAILABLE);

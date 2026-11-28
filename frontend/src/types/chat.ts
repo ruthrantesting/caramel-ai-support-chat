@@ -1,6 +1,9 @@
 /** Error codes from contracts/chat-api.openapi.yaml. Keep in sync with the backend enum. */
 export type ChatErrorCode =
   | 'INVALID_REQUEST'
+  | 'CSRF_INVALID'
+  | 'UNAUTHENTICATED'
+  | 'CONVERSATION_NOT_FOUND'
   | 'RATE_LIMITED'
   | 'CONVERSATION_BUSY'
   | 'PROVIDER_UNAVAILABLE'

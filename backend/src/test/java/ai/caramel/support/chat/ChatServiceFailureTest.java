@@ -37,6 +37,7 @@ import reactor.test.StepVerifier;
 class ChatServiceFailureTest {
 
     private static final String CONVERSATION = UUID.randomUUID().toString();
+    private static final String USER = "user-a";
 
     private ChatModel chatModel;
     private ChatMemory memory;
@@ -60,7 +61,7 @@ class ChatServiceFailureTest {
         when(chatModel.stream(any(Prompt.class))).thenReturn(
                 Flux.error(new IOException("connect to internal-gateway.example:443 refused")));
 
-        StepVerifier.create(service.stream(CONVERSATION, "hi"))
+        StepVerifier.create(service.stream(USER, CONVERSATION, "hi"))
                 .assertNext(event -> {
                     ChatFailure failure = ((ChatEvent.Failed) event).failure();
                     assertThat(failure.code()).isEqualTo(ChatErrorCode.PROVIDER_UNAVAILABLE);
@@ -74,7 +75,7 @@ class ChatServiceFailureTest {
         ClientException quota = new ClientException(429, "quota exceeded for project 12345", "RESOURCE_EXHAUSTED");
         when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.error(quota));
 
-        StepVerifier.create(service.stream(CONVERSATION, "hi"))
+        StepVerifier.create(service.stream(USER, CONVERSATION, "hi"))
                 .assertNext(event -> assertThat(((ChatEvent.Failed) event).failure().code())
                         .isEqualTo(ChatErrorCode.PROVIDER_RATE_LIMITED))
                 .verifyComplete();
@@ -85,7 +86,7 @@ class ChatServiceFailureTest {
         Sinks.Many<ChatResponse> silentModel = Sinks.many().unicast().onBackpressureBuffer();
         when(chatModel.stream(any(Prompt.class))).thenReturn(silentModel.asFlux());
 
-        StepVerifier.create(service.stream(CONVERSATION, "hi"))
+        StepVerifier.create(service.stream(USER, CONVERSATION, "hi"))
                 .assertNext(event -> assertThat(((ChatEvent.Failed) event).failure().code())
                         .isEqualTo(ChatErrorCode.TIMEOUT))
                 .verifyComplete();
@@ -96,7 +97,7 @@ class ChatServiceFailureTest {
         when(chatModel.stream(any(Prompt.class))).thenReturn(
                 Flux.interval(Duration.ofMillis(100)).map(i -> chunk("tok" + i)));
 
-        StepVerifier.create(service.stream(CONVERSATION, "hi"))
+        StepVerifier.create(service.stream(USER, CONVERSATION, "hi"))
                 .thenConsumeWhile(event -> event instanceof ChatEvent.Token)
                 .assertNext(event -> assertThat(((ChatEvent.Failed) event).failure().code())
                         .isEqualTo(ChatErrorCode.TIMEOUT))
@@ -108,7 +109,7 @@ class ChatServiceFailureTest {
         when(chatModel.stream(any(Prompt.class))).thenReturn(
                 Flux.concat(Flux.just(chunk("partial")), Flux.error(new IOException("dropped"))));
 
-        StepVerifier.create(service.stream(CONVERSATION, "hi"))
+        StepVerifier.create(service.stream(USER, CONVERSATION, "hi"))
                 .expectNext(new ChatEvent.Token("partial"))
                 .assertNext(event -> assertThat(((ChatEvent.Failed) event).failure().code())
                         .isEqualTo(ChatErrorCode.PROVIDER_UNAVAILABLE))
@@ -122,10 +123,10 @@ class ChatServiceFailureTest {
                 Flux.just(chunk("first answer")),
                 Flux.error(new IOException("boom")));
 
-        service.stream(conversation, "first question").blockLast();
-        service.stream(conversation, "second question").blockLast();
+        service.stream(USER, conversation, "first question").blockLast();
+        service.stream(USER, conversation, "second question").blockLast();
 
-        List<String> texts = memory.get(conversation).stream().map(Message::getText).toList();
+        List<String> texts = memory.get(ChatService.memoryKey(USER, conversation)).stream().map(Message::getText).toList();
         assertThat(texts).containsExactly("first question", "first answer");
     }
 

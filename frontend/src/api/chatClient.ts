@@ -1,4 +1,5 @@
 import type { ApiError, ChatErrorCode, ChatEvent } from '../types/chat';
+import { apiFetch } from '../auth/apiFetch';
 import { FALLBACK_MESSAGES } from './errorMessages';
 import { SseParser } from './sseParser';
 
@@ -33,7 +34,7 @@ export interface StreamChatArgs {
  * (spec FR-017).
  */
 export async function streamChat({ conversationId, message, signal, onEvent }: StreamChatArgs): Promise<void> {
-  const response = await fetch('/api/chat', {
+  const response = await apiFetch('/api/chat', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -73,7 +74,7 @@ export async function streamChat({ conversationId, message, signal, onEvent }: S
 
 /** Removes the conversation's memory on the server (New chat, FR-013). Callers ignore failures. */
 export async function clearConversation(conversationId: string): Promise<void> {
-  await fetch(`/api/chat/${encodeURIComponent(conversationId)}`, { method: 'DELETE' });
+  await apiFetch(`/api/chat/${encodeURIComponent(conversationId)}`, { method: 'DELETE' });
 }
 
 async function readApiError(response: Response): Promise<ApiError> {
@@ -88,6 +89,13 @@ async function readApiError(response: Response): Promise<ApiError> {
     }
   } catch {
     // Not JSON: fall through to the fixed message for the status.
+  }
+  if (response.status === 401) {
+    return fallback('UNAUTHENTICATED');
+  }
+  if (response.status === 404) {
+    // Only the chat endpoints return 404, and only for an identifier this user does not own.
+    return fallback('CONVERSATION_NOT_FOUND');
   }
   return fallback(response.status === 429 ? 'RATE_LIMITED' : 'INTERNAL_ERROR');
 }

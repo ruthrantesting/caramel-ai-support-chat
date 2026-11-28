@@ -1,5 +1,7 @@
 package ai.caramel.support.web;
 
+import static ai.caramel.support.AuthTestSupport.USER_A;
+import static ai.caramel.support.AuthTestSupport.signedInAs;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -54,11 +56,11 @@ class ApiKeyLeakTest {
         String conversation = UUID.randomUUID().toString();
         List<String> seen = new ArrayList<>();
         seen.add(record(mvc.perform(turn(conversation, "a question")).andReturn()));
-        seen.add(record(mvc.perform(post("/api/chat")
+        seen.add(record(mvc.perform(post("/api/chat").with(signedInAs(USER_A))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{not json")).andReturn()));
-        seen.add(record(mvc.perform(delete("/api/chat/not-a-uuid")).andReturn()));
-        seen.add(record(mvc.perform(delete("/api/chat/" + conversation)).andReturn()));
+        seen.add(record(mvc.perform(delete("/api/chat/not-a-uuid").with(signedInAs(USER_A))).andReturn()));
+        seen.add(record(mvc.perform(delete("/api/chat/" + conversation).with(signedInAs(USER_A))).andReturn()));
         for (int i = 0; i < 25; i++) {
             seen.add(record(mvc.perform(turn(conversation, "burst " + i)).andReturn()));
         }
@@ -82,7 +84,7 @@ class ApiKeyLeakTest {
     }
 
     private static org.springframework.test.web.servlet.RequestBuilder turn(String conversation, String message) {
-        return post("/api/chat")
+        return post("/api/chat").with(signedInAs(USER_A))
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .content("{\"conversationId\":\"" + conversation + "\",\"message\":\"" + message + "\"}");

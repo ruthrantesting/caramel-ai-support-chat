@@ -14,7 +14,12 @@ export type ChatPhase = 'idle' | 'sending' | 'streaming';
  * The conversation id is kept only in memory, so a page reload starts a new conversation
  * (data-model.md; no persistence, Constitution I). New chat replaces it.
  */
-export function useChat() {
+export interface UseChatOptions {
+  /** Called with the unsent question when the session has expired (User Story 3, FR-015). */
+  onSessionExpired?: (unsent: string) => void;
+}
+
+export function useChat(options: UseChatOptions = {}) {
   // crypto.randomUUID needs a secure context (https or localhost).
   const [conversationId, setConversationId] = useState<string>(() => crypto.randomUUID());
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -45,6 +50,10 @@ export function useChat() {
           status: aborted || m.content !== '' ? 'interrupted' : 'failed',
           error: aborted ? undefined : failure,
         }));
+        if (!aborted && failure?.code === 'UNAUTHENTICATED') {
+          // The question stays in the transcript for Retry; the handler also sees it for the sign-in step.
+          options.onSessionExpired?.(text);
+        }
       };
 
       try {
@@ -76,7 +85,7 @@ export function useChat() {
         setPhase('idle');
       }
     },
-    [conversationId, patch],
+    [conversationId, patch, options],
   );
 
   const send = useCallback(

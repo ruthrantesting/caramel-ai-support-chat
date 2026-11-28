@@ -28,25 +28,28 @@ class ConversationExpiryTest {
 
     @Test
     void idleConversationIsClearedAndAConversationWithATurnInFlightIsKept() {
+        registry.claim("owner", "idle");
         registry.tryBeginTurn("idle");
         registry.endTurn("idle");
         clock.advance(Duration.ofHours(3));
+        registry.claim("owner", "active");
         registry.tryBeginTurn("active"); // still streaming
 
         task.expireIdleConversations();
 
-        verify(chatService).clear("idle");
-        verify(chatService, never()).clear("active");
+        verify(chatService).clear("owner", "idle");
+        verify(chatService, never()).clear("owner", "active");
     }
 
     @Test
     void recentlyUsedConversationIsKept() {
+        registry.claim("owner", "recent");
         registry.tryBeginTurn("recent");
         registry.endTurn("recent");
         clock.advance(Duration.ofHours(1));
 
         task.expireIdleConversations();
 
-        verify(chatService, never()).clear("recent");
+        verify(chatService, never()).clear("owner", "recent");
     }
 }

@@ -34,8 +34,8 @@ public class ConversationExpiryTask {
     @Scheduled(fixedDelayString = "PT5M", initialDelayString = "PT5M")
     public void expireIdleConversations() {
         Instant cutoff = clock.instant().minus(idleTtl);
-        for (String conversationId : conversations.idleBefore(cutoff)) {
-            chatService.clear(conversationId);
+        for (ConversationRegistry.OwnedConversation idle : conversations.idleBefore(cutoff)) {
+            chatService.clear(idle.userId(), idle.conversationId());
         }
     }
 }

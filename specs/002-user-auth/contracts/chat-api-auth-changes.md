@@ -46,4 +46,4 @@ Unchanged shape: `{ "code": "...", "message": "...", "retryAfterSeconds": 12 }`.
 
 ## SSE
 
-No change to events. The intended behavior is that a session that ends while a reply is streaming does not cut the stream, because the user was authenticated when the stream began, and the next request returns `401`. This is not yet verified, because streamed replies are dispatched asynchronously and the security filter also checks asynchronous dispatches (research A-14). A test must confirm it. If the test shows the stream is cut, the contract must say so instead.
+No change to events. A session that ends while a reply is streaming does not cut the stream: the reply already in progress completes with its `done` event, and the next request on that session returns `401`. This is verified by `StreamingFlushTest` (research A-14). Async dispatches of the streamed request are not authorized again, so a sign-out cannot interrupt a reply that has already started.

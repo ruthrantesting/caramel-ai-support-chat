@@ -11,14 +11,21 @@ import org.springframework.stereotype.Component;
 import reactor.core.Disposable;
 
 /**
- * Per-conversation bookkeeping held in process memory (data-model.md, Conversation):
- * last activity, whether a turn is in flight, and how to cancel that turn.
+ * Per-conversation bookkeeping held in process memory (data-model.md, Conversation and Conversation
+ * ownership binding): the owning user, last activity, whether a turn is in flight, and how to cancel it.
  *
- * <p>This does not store messages. Messages live in Spring AI chat memory. The registry only
- * decides whether a new turn may start and when a conversation is idle.
+ * <p>This does not store messages. Messages live in Spring AI chat memory. The registry decides who
+ * owns an identifier, whether a new turn may start, and when a conversation is idle.
+ *
+ * <p>Ownership is set once, atomically, by the first accepted request for an identifier (FR-017).
+ * A different user is refused with {@link ConversationNotFoundException}, so the response never
+ * shows that the identifier exists.
  */
 @Component
 public class ConversationRegistry {
+
+    /** An identifier together with its owner, as the expiry task needs them. */
+    public record OwnedConversation(String userId, String conversationId) {}
 
     private final Clock clock;
     private final Map<String, Entry> entries = new ConcurrentHashMap<>();
@@ -28,11 +35,29 @@ public class ConversationRegistry {
     }
 
     /**
-     * Marks a turn as in flight. Returns {@code false} if a turn is already in flight for this
-     * conversation, in which case the caller must reject the request with CONVERSATION_BUSY.
+     * Binds the identifier to {@code userId} if it is free, or confirms the existing binding. The check
+     * and the bind happen in one atomic step, so two users racing for a new identifier cannot both win.
+     *
+     * @throws ConversationNotFoundException when another user owns the identifier
+     */
+    public void claim(String userId, String conversationId) {
+        Entry entry = entries.compute(conversationId,
+                (id, existing) -> existing != null ? existing : new Entry(userId, clock.instant()));
+        if (!entry.ownerUserId.equals(userId)) {
+            throw new ConversationNotFoundException();
+        }
+    }
+
+    /**
+     * Marks a turn as in flight. The caller must have claimed the identifier first. Returns
+     * {@code false} if a turn is already in flight, in which case the caller rejects the request with
+     * CONVERSATION_BUSY.
      */
     public boolean tryBeginTurn(String conversationId) {
-        Entry entry = entries.computeIfAbsent(conversationId, id -> new Entry(clock.instant()));
+        Entry entry = entries.get(conversationId);
+        if (entry == null) {
+            throw new IllegalStateException("The conversation must be claimed before a turn starts");
+        }
         if (!entry.inFlight.compareAndSet(false, true)) {
             return false;
         }
@@ -58,20 +83,28 @@ public class ConversationRegistry {
         }
     }
 
-    /** Cancels any in-flight turn and forgets the conversation. */
-    public void remove(String conversationId) {
-        Entry entry = entries.remove(conversationId);
-        if (entry != null && entry.turn != null) {
+    /**
+     * Releases the identifier for {@code userId} (New chat). Cancels any in-flight turn. An unknown
+     * identifier and another user's identifier both throw {@link ConversationNotFoundException}, so a
+     * caller cannot tell them apart.
+     */
+    public void release(String userId, String conversationId) {
+        Entry entry = entries.get(conversationId);
+        if (entry == null || !entry.ownerUserId.equals(userId)) {
+            throw new ConversationNotFoundException();
+        }
+        entries.remove(conversationId, entry);
+        if (entry.turn != null) {
             entry.turn.dispose();
         }
     }
 
-    /** Ids of conversations with no turn in flight whose last activity is before the cutoff. */
-    public List<String> idleBefore(Instant cutoff) {
-        List<String> idle = new ArrayList<>();
+    /** Owned conversations with no turn in flight whose last activity is before the cutoff. */
+    public List<OwnedConversation> idleBefore(Instant cutoff) {
+        List<OwnedConversation> idle = new ArrayList<>();
         entries.forEach((id, entry) -> {
             if (!entry.inFlight.get() && entry.lastActivityAt.isBefore(cutoff)) {
-                idle.add(id);
+                idle.add(new OwnedConversation(entry.ownerUserId, id));
             }
         });
         return idle;
@@ -83,11 +116,13 @@ public class ConversationRegistry {
     }
 
     private static final class Entry {
+        final String ownerUserId;
         final AtomicBoolean inFlight = new AtomicBoolean(false);
         volatile Instant lastActivityAt;
         volatile Disposable turn;
 
-        Entry(Instant createdAt) {
+        Entry(String ownerUserId, Instant createdAt) {
+            this.ownerUserId = ownerUserId;
             this.lastActivityAt = createdAt;
         }
     }

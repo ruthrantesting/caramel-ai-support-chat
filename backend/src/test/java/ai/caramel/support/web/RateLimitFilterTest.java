@@ -6,7 +6,13 @@ import ai.caramel.support.MutableClock;
 import ai.caramel.support.TestSettings;
 import java.time.Duration;
 import java.time.Instant;
+import ai.caramel.support.auth.AuthenticatedUser;
+import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -23,6 +29,25 @@ class RateLimitFilterTest {
     void setUp() {
         clock = new MutableClock(Instant.parse("2026-11-14T10:00:00Z"));
         filter = new RateLimitFilter(TestSettings.defaults(), clock, new ObjectMapper());
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    /** FR-021 and SC-009: the limit is per signed-in user, so two users on one address do not share it. */
+    @Test
+    void twoUsersOnOneAddressEachGetTheirOwnTwentyMessages() throws Exception {
+        for (int i = 0; i < 20; i++) {
+            assertThat(asUser("alice", "10.0.0.7").getStatus()).isEqualTo(200);
+        }
+        for (int i = 0; i < 20; i++) {
+            assertThat(asUser("bob", "10.0.0.7").getStatus()).isEqualTo(200);
+        }
+
+        assertThat(asUser("alice", "10.0.0.7").getStatus()).isEqualTo(429);
+        assertThat(asUser("bob", "10.0.0.7").getStatus()).isEqualTo(429);
     }
 
     @Test
@@ -68,6 +93,19 @@ class RateLimitFilterTest {
         }
         assertThat(post("10.0.0.4").getStatus()).isEqualTo(429);
         assertThat(post("10.0.0.5").getStatus()).isEqualTo(200);
+    }
+
+    /** Sends a chat message as a signed-in user, as the security chain would have set the principal. */
+    private MockHttpServletResponse asUser(String name, String remoteAddress) throws Exception {
+        AuthenticatedUser principal = new AuthenticatedUser(
+                UUID.nameUUIDFromBytes(name.getBytes(java.nio.charset.StandardCharsets.UTF_8)), name + "@example.test");
+        SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
+                principal, null, java.util.List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+        try {
+            return post(remoteAddress);
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 
     private MockHttpServletResponse post(String remoteAddress) throws Exception {

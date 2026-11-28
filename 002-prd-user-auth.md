@@ -134,6 +134,28 @@ React SPA --(HTTP + session cookie, CSRF token)--> Spring Boot
 
 Error responses use the same problem-detail style as the chat endpoints. `401` means not signed in, `403` means a missing or invalid CSRF token, `404` means unknown or not-owned conversation, and `429` means rate limited.
 
+### Decisions recorded before implementation
+
+Recorded per the constitution (Principles V and VI), before any code. Detailed rationale is in `specs/002-user-auth/research.md`.
+
+- **User store**: accounts and password-reset tokens live in a relational database, accessed with plain JDBC (`JdbcClient`, no JPA). Development and tests use an embedded H2 file in PostgreSQL compatibility mode (`backend/data/`, git-ignored). Production uses PostgreSQL, selected by `AUTH_DB_URL`, `AUTH_DB_USER`, and `AUTH_DB_PASSWORD`. Who hosts PostgreSQL is still open.
+- **Schema**: created by `schema.sql` with `CREATE TABLE IF NOT EXISTS`. No migration tool in the MVP.
+- **Sessions**: server-side session in the servlet container, carried by an `HttpOnly`, `SameSite=Lax` cookie. `Secure` is on by default and can be turned off for local HTTP with `SESSION_COOKIE_SECURE=false`. Idle limit 8 hours; absolute limit 7 days from sign-in. Sessions, ownership bindings, chat memory, and rate-limit state stay in process memory and are lost on restart.
+- **Password hashing**: Argon2id through a delegating password encoder. Passwords are 12 to 128 code points after Unicode NFKC normalization, with no composition rules, and are checked against a bundled common-password list.
+- **CSRF**: `POST` and `DELETE` require the `X-XSRF-TOKEN` header, which carries the value of the readable `XSRF-TOKEN` cookie. A missing or wrong token returns `403`.
+- **Conversation ownership**: the first accepted `POST` binds a conversation identifier to its user. Any other user's request for that identifier returns `404`. Chat memory is keyed by user and identifier.
+- **Rate limits**: chat is limited per authenticated user (20 per minute). Sign-in and sign-up are limited per client address. Sign-in is also limited per email address, with a delay that grows after five failures in 15 minutes.
+
+### Contract changes to the 001 chat API
+
+Both chat endpoints now need a signed-in session and the CSRF header. Changes to responses and behavior:
+
+- `POST /api/chat` and `DELETE /api/chat/{conversationId}` return `401` `UNAUTHENTICATED` when there is no session, and `403` `CSRF_INVALID` when the CSRF header is missing or wrong. Both are returned before any stream starts.
+- `POST /api/chat` and `DELETE /api/chat/{conversationId}` return `404` `CONVERSATION_NOT_FOUND` when the identifier belongs to another user. `DELETE` also returns `404` for an unknown identifier, so a user cannot tell an unknown identifier from someone else's. Owner deletes still return `204`.
+- `POST /api/chat` returns `429` `RATE_LIMITED` per user, not per client address. The body and `Retry-After` header are unchanged.
+- The error codes `UNAUTHENTICATED`, `CSRF_INVALID`, and `CONVERSATION_NOT_FOUND` are added to the chat error enum. The SSE events are unchanged.
+- Sign-up for an address that is already registered returns a neutral refusal that points to sign-in or password reset. This means registration can be detected; the trade-off is accepted until email verification exists.
+
 ## 10. UX Notes
 
 - **Signed-out state**: The app opens on the sign-in screen, with a link to sign up. There is no anonymous chat.

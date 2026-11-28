@@ -12,6 +12,12 @@ const FORBIDDEN = [
 ];
 // If the real key is provided in the environment, it must not appear in the bundle either.
 const liveKey = process.env.GOOGLE_API_KEY;
+// Constitution VI: session credentials must never be kept in browser storage (specs/002-user-auth, FR-013).
+const SRC = new URL('../src/', import.meta.url).pathname;
+const STORAGE_APIS = [
+  { label: 'localStorage', pattern: /\blocalStorage\b/ },
+  { label: 'sessionStorage', pattern: /\bsessionStorage\b/ },
+];
 
 function* files(dir) {
   for (const name of readdirSync(dir)) {
@@ -49,6 +55,15 @@ for (const file of files(DIST)) {
   }
 }
 
+for (const file of files(SRC)) {
+  const text = readFileSync(file, 'utf8');
+  for (const { label, pattern } of STORAGE_APIS) {
+    if (pattern.test(text)) {
+      findings.push(`${file}: uses ${label}, which must not hold session data (Constitution VI)`);
+    }
+  }
+}
+
 if (findings.length > 0) {
   console.error('verify-no-secrets: FAILED');
   for (const finding of findings) {
@@ -56,4 +71,4 @@ if (findings.length > 0) {
   }
   process.exit(1);
 }
-console.log('verify-no-secrets: OK (no provider key or key-shaped string in frontend/dist)');
+console.log('verify-no-secrets: OK (no provider key or key-shaped string in frontend/dist; no browser storage in frontend/src)');

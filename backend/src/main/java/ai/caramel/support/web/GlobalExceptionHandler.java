@@ -3,6 +3,7 @@ package ai.caramel.support.web;
 import ai.caramel.support.chat.ChatErrorCode;
 import ai.caramel.support.chat.ChatFailureException;
 import ai.caramel.support.chat.ConversationBusyException;
+import ai.caramel.support.chat.ConversationNotFoundException;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +14,8 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 
 /**
@@ -39,9 +42,24 @@ public class GlobalExceptionHandler {
         return error(statusFor(ex.code()), ex.code());
     }
 
+    @ExceptionHandler(ConversationNotFoundException.class)
+    ResponseEntity<ApiError> conversationNotFound() {
+        return error(HttpStatus.NOT_FOUND, ChatErrorCode.CONVERSATION_NOT_FOUND);
+    }
+
     @ExceptionHandler(ConversationBusyException.class)
     ResponseEntity<ApiError> conversationBusy() {
         return error(HttpStatus.CONFLICT, ChatErrorCode.CONVERSATION_BUSY);
+    }
+
+    /**
+     * Authentication and access-denied failures belong to the security filter chain, which answers
+     * them with 401 and 403 (research A-13). Re-throwing sends them there instead of to the catch-all
+     * below, which would turn them into 500.
+     */
+    @ExceptionHandler({AuthenticationException.class, AccessDeniedException.class})
+    void rethrowSecurityFailure(RuntimeException ex) {
+        throw ex;
     }
 
     @ExceptionHandler(Exception.class)
@@ -63,6 +81,9 @@ public class GlobalExceptionHandler {
             case PROVIDER_UNAVAILABLE, PROVIDER_RATE_LIMITED -> HttpStatus.SERVICE_UNAVAILABLE;
             case TIMEOUT -> HttpStatus.GATEWAY_TIMEOUT;
             case INTERNAL_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;
+            case UNAUTHENTICATED -> HttpStatus.UNAUTHORIZED;
+            case CSRF_INVALID -> HttpStatus.FORBIDDEN;
+            case CONVERSATION_NOT_FOUND -> HttpStatus.NOT_FOUND;
         };
     }
 

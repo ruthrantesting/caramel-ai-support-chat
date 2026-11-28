@@ -137,7 +137,7 @@ class GuardrailEvalIT {
     private String reply(String conversationId, List<String> turns) {
         String last = "";
         for (String turn : turns) {
-            last = collect(chatService.stream(conversationId, turn));
+            last = collect(chatService.stream("live-eval-user", conversationId, turn));
         }
         return last;
     }

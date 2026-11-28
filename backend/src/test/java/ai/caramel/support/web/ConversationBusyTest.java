@@ -1,5 +1,7 @@
 package ai.caramel.support.web;
 
+import static ai.caramel.support.AuthTestSupport.USER_A;
+import static ai.caramel.support.AuthTestSupport.signedInAs;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
@@ -74,7 +76,7 @@ class ConversationBusyTest {
     }
 
     private static org.springframework.test.web.servlet.RequestBuilder turn(String conversation, String message) {
-        return post("/api/chat")
+        return post("/api/chat").with(signedInAs(USER_A))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"conversationId\":\"" + conversation + "\",\"message\":\"" + message + "\"}");
     }

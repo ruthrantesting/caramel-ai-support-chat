@@ -47,15 +47,18 @@ public class ChatService {
      * @throws ConversationBusyException synchronously, before any streaming, if a turn is already
      *     in flight for this conversation. The controller maps this to HTTP 409.
      */
-    public Flux<ChatEvent> stream(String conversationId, String message) {
+    public Flux<ChatEvent> stream(String userId, String conversationId, String message) {
+        // Refuses another user's identifier with ConversationNotFoundException before anything runs.
+        conversations.claim(userId, conversationId);
         if (!conversations.tryBeginTurn(conversationId)) {
             throw new ConversationBusyException();
         }
-        List<Message> memoryBeforeTurn = List.copyOf(chatMemory.get(conversationId));
+        String memoryKey = memoryKey(userId, conversationId);
+        List<Message> memoryBeforeTurn = List.copyOf(chatMemory.get(memoryKey));
 
         Flux<ChatEvent> reply = chatClient.prompt()
                 .user(message)
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId))
+                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, memoryKey))
                 .stream()
                 .content()
                 .filter(text -> !text.isEmpty())
@@ -69,7 +72,7 @@ public class ChatService {
         return reply
                 .concatWith(Flux.just(new ChatEvent.Done()))
                 .onErrorResume(error -> {
-                    restoreMemory(conversationId, memoryBeforeTurn);
+                    restoreMemory(memoryKey, memoryBeforeTurn);
                     return Flux.just(new ChatEvent.Failed(errorMapper.map(error)));
                 })
                 .doOnSubscribe(subscription -> conversations.attachTurn(conversationId, subscription::cancel))
@@ -78,27 +81,35 @@ public class ChatService {
                 // the reply completes could still see the turn as in flight.
                 .doOnTerminate(() -> conversations.endTurn(conversationId))
                 .doOnCancel(() -> {
-                    restoreMemory(conversationId, memoryBeforeTurn);
+                    restoreMemory(memoryKey, memoryBeforeTurn);
                     conversations.endTurn(conversationId);
                 });
     }
 
     /**
-     * New chat: cancels any in-flight turn, forgets the conversation, and clears its memory.
-     * Clearing an unknown id is a no-op.
+     * New chat (FR-019): cancels any in-flight turn, releases the identifier, and clears this user's
+     * memory for it. Unknown and foreign identifiers throw {@link ConversationNotFoundException}.
      *
-     * <p>Order matters. {@code remove} cancels the in-flight turn, and that cancel restores the
-     * memory from before the turn. Clearing memory after that guarantees nothing comes back.
+     * <p>Order matters. {@code release} cancels the in-flight turn, and that cancel restores the memory
+     * from before the turn. Clearing memory after that guarantees nothing comes back.
      */
-    public void clear(String conversationId) {
-        conversations.remove(conversationId);
-        chatMemory.clear(conversationId);
+    public void clear(String userId, String conversationId) {
+        conversations.release(userId, conversationId);
+        chatMemory.clear(memoryKey(userId, conversationId));
     }
 
-    private void restoreMemory(String conversationId, List<Message> memoryBeforeTurn) {
-        chatMemory.clear(conversationId);
+    /**
+     * The chat memory key for one user's conversation (data-model, Chat memory key). Two users can
+     * never share a history, even if they use the same identifier at different times.
+     */
+    public static String memoryKey(String userId, String conversationId) {
+        return userId + ":" + conversationId;
+    }
+
+    private void restoreMemory(String memoryKey, List<Message> memoryBeforeTurn) {
+        chatMemory.clear(memoryKey);
         if (!memoryBeforeTurn.isEmpty()) {
-            chatMemory.add(conversationId, memoryBeforeTurn);
+            chatMemory.add(memoryKey, memoryBeforeTurn);
         }
     }
 }
